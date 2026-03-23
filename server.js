@@ -9,60 +9,65 @@ app.use(express.json());
 
 const SYSTEM_PROMPT = `
 Eres un asistente comercial para bodegas del Penedès.
-Tu objetivo es recomendar experiencias, resolver dudas y ayudar a captar leads.
+
+Objetivo:
+- recomendar experiencias
+- resolver dudas
+- captar leads
 
 Normas:
-- Responde en catalán, castellano, inglés, francés o ruso según el idioma recibido.
-- Sé claro, elegante y comercial.
-- No inventes información.
-- Si el usuario comparte nombre, email, teléfono o fecha deseada, extráelos y devuélvelos en el JSON.
-- Si no conoces alguno de esos datos, devuelve null.
-- Devuelve SIEMPRE un JSON con esta estructura:
-
-{
-  "reply_text": "texto de respuesta",
-  "language": "ca",
-  "detected_intent": "pareja",
-  "people_count": 2,
-  "recommended_experience_id": "exp_1",
-  "alternative_experience_id": null,
-  "objection_detected": "none",
-  "lead_stage": "qualified",
-  "next_step": "ask_contact",
-  "ask_for_contact": true,
-  "conversation_summary": "resumen breve",
-  "lead_name": null,
-  "lead_email": null,
-  "lead_phone": null,
-  "desired_date": null,
-  "fields_to_update": {}
-}
+- responde en catalán, castellano, inglés, francés o ruso según el idioma del usuario
+- sé claro, elegante y comercial
+- no inventes información
+- usa solo la información recibida en winery, experiences y messages
+- reply_text debe ser breve, útil y natural
+- si el usuario comparte nombre, email, teléfono o fecha deseada, extráelos
+- si no conoces un dato, devuelve null
 `;
-/* const SYSTEM_PROMPT = `
-Eres un asistente comercial para bodegas del Penedès.
-Tu objetivo es recomendar experiencias, resolver dudas y ayudar a captar leads.
 
-Normas:
-- Responde en catalán, castellano o inglés según el idioma recibido.
-- Sé claro, elegante y comercial.
-- No inventes información.
-- Devuelve SIEMPRE un JSON con esta estructura:
-
-{
-  "reply_text": "texto de respuesta",
-  "language": "ca",
-  "detected_intent": "pareja",
-  "people_count": 2,
-  "recommended_experience_id": "exp_1",
-  "alternative_experience_id": null,
-  "objection_detected": "none",
-  "lead_stage": "qualified",
-  "next_step": "ask_contact",
-  "ask_for_contact": true,
-  "conversation_summary": "resumen breve",
-  "fields_to_update": {}
-}
-`;*/
+const RESPONSE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    reply_text: { type: "string" },
+    language: { type: ["string", "null"] },
+    detected_intent: { type: ["string", "null"] },
+    people_count: { type: ["integer", "null"] },
+    recommended_experience_id: { type: ["string", "null"] },
+    alternative_experience_id: { type: ["string", "null"] },
+    objection_detected: { type: ["string", "null"] },
+    lead_stage: { type: ["string", "null"] },
+    next_step: { type: ["string", "null"] },
+    ask_for_contact: { type: "boolean" },
+    conversation_summary: { type: ["string", "null"] },
+    lead_name: { type: ["string", "null"] },
+    lead_email: { type: ["string", "null"] },
+    lead_phone: { type: ["string", "null"] },
+    desired_date: { type: ["string", "null"] },
+    fields_to_update: {
+      type: "object",
+      additionalProperties: true
+    }
+  },
+  required: [
+    "reply_text",
+    "language",
+    "detected_intent",
+    "people_count",
+    "recommended_experience_id",
+    "alternative_experience_id",
+    "objection_detected",
+    "lead_stage",
+    "next_step",
+    "ask_for_contact",
+    "conversation_summary",
+    "lead_name",
+    "lead_email",
+    "lead_phone",
+    "desired_date",
+    "fields_to_update"
+  ]
+};
 
 app.get("/", function (req, res) {
   res.send("Agente Enllaç funcionando");
@@ -73,16 +78,18 @@ app.post("/chat", function (req, res) {
 
   const requestBody = JSON.stringify({
     model: "gpt-4.1-mini",
-    input: [
-      {
-        role: "system",
-        content: SYSTEM_PROMPT
-      },
-      {
-        role: "user",
-        content: JSON.stringify(payload)
+    instructions: SYSTEM_PROMPT,
+    max_output_tokens: 220,
+    store: false,
+    text: {
+      format: {
+        type: "json_schema",
+        name: "lead_response",
+        strict: true,
+        schema: RESPONSE_SCHEMA
       }
-    ]
+    },
+    input: JSON.stringify(payload)
   });
 
   const options = {
@@ -108,26 +115,26 @@ app.post("/chat", function (req, res) {
         const parsed = JSON.parse(data);
 
         const outputText =
-  parsed.output &&
-  parsed.output[0] &&
-  parsed.output[0].content &&
-  parsed.output[0].content[0] &&
-  parsed.output[0].content[0].text;
+          parsed.output_text ||
+          (parsed.output &&
+            parsed.output[0] &&
+            parsed.output[0].content &&
+            parsed.output[0].content[0] &&
+            parsed.output[0].content[0].text);
 
-if (!outputText) {
-  return res.status(500).json({
-    ok: false,
-    error: "No se encontró texto en la respuesta de OpenAI",
-    raw: parsed
-  });
-}
+        if (!outputText) {
+          return res.status(500).json({
+            ok: false,
+            error: "No se encontró texto en la respuesta de OpenAI",
+            raw: parsed
+          });
+        }
 
-const finalJson = JSON.parse(outputText);
-
-res.json(finalJson);
+        const finalJson = JSON.parse(outputText);
+        return res.json(finalJson);
       } catch (err) {
         console.error("Error parseando respuesta:", err);
-        res.status(500).json({
+        return res.status(500).json({
           ok: false,
           error: "No se pudo parsear la respuesta de OpenAI",
           raw: data
