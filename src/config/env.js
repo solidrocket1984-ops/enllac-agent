@@ -1,70 +1,65 @@
 const dotenv = require('dotenv');
+const { z } = require('../lib/zod-lite');
 
 dotenv.config();
 
-function toNumber(value, fallback) {
-  if (value === undefined || value === null || value === '') return fallback;
+const EnvSchema = z.object({
+  PORT: z.number().int().min(1).max(65535).default(3000),
+  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required'),
+  OPENAI_MODEL: z.string().min(1).default('gpt-4.1-mini'),
+  OPENAI_TIMEOUT_MS: z.number().int().min(1000).max(120000).default(15000),
+  ALLOWED_ORIGINS: z.string().optional().default(''),
+  AGENT_SHARED_TOKEN: z.string().optional().default(''),
+  DEFAULT_SECTOR: z.string().min(1).default('generic'),
+  RATE_LIMIT_WINDOW_MS: z.number().int().min(1000).default(60000),
+  RATE_LIMIT_MAX: z.number().int().min(1).default(60),
+  BODY_LIMIT: z.string().min(2).default('250kb'),
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  APP_NAME: z.string().min(1).default('enllac-agent')
+});
+
+function parseOrigins(input) {
+  return input.split(',').map((v) => v.trim()).filter(Boolean);
+}
+
+function num(value) {
+  if (value === undefined || value === null || value === '') return undefined;
   const n = Number(value);
-  return Number.isFinite(n) ? n : fallback;
+  return Number.isFinite(n) ? n : value;
 }
 
-function toBoolean(value, fallback = false) {
-  if (value === undefined || value === null || value === '') return fallback;
-  return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
-}
+function loadEnv() {
+  const raw = {
+    PORT: num(process.env.PORT),
+    NODE_ENV: process.env.NODE_ENV,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    OPENAI_MODEL: process.env.OPENAI_MODEL,
+    OPENAI_TIMEOUT_MS: num(process.env.OPENAI_TIMEOUT_MS),
+    ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS,
+    AGENT_SHARED_TOKEN: process.env.AGENT_SHARED_TOKEN,
+    DEFAULT_SECTOR: process.env.DEFAULT_SECTOR,
+    RATE_LIMIT_WINDOW_MS: num(process.env.RATE_LIMIT_WINDOW_MS),
+    RATE_LIMIT_MAX: num(process.env.RATE_LIMIT_MAX),
+    BODY_LIMIT: process.env.BODY_LIMIT,
+    LOG_LEVEL: process.env.LOG_LEVEL,
+    APP_NAME: process.env.APP_NAME
+  };
 
-function parseOrigins(value) {
-  if (!value) return [];
-  return value.split(',').map((origin) => origin.trim()).filter(Boolean);
-}
+  if ((raw.NODE_ENV || 'development') === 'test' && !raw.OPENAI_API_KEY) raw.OPENAI_API_KEY = 'test-key';
 
-const env = {
-  APP_NAME: process.env.APP_NAME || 'enllac-agent',
-  NODE_ENV: process.env.NODE_ENV || 'development',
-  PORT: toNumber(process.env.PORT, 3000),
-  OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
-  OPENAI_MODEL: process.env.OPENAI_MODEL || 'gpt-4.1-mini',
-  OPENAI_TIMEOUT_MS: toNumber(process.env.OPENAI_TIMEOUT_MS, 12000),
-  ALLOWED_ORIGINS: parseOrigins(process.env.ALLOWED_ORIGINS),
-  AGENT_SHARED_TOKEN: process.env.AGENT_SHARED_TOKEN || '',
-  LOG_LEVEL: process.env.LOG_LEVEL || 'info',
-  DEFAULT_SECTOR: process.env.DEFAULT_SECTOR || 'generic',
-  RATE_LIMIT_WINDOW_MS: toNumber(process.env.RATE_LIMIT_WINDOW_MS, 60000),
-  RATE_LIMIT_MAX: toNumber(process.env.RATE_LIMIT_MAX, 60),
-  BODY_LIMIT: process.env.BODY_LIMIT || '250kb',
-  ENABLE_PRETTY_LOGS: toBoolean(process.env.ENABLE_PRETTY_LOGS, false)
-};
-
-function validateEnvOrThrow(config) {
-  const errors = [];
-  if (!['development', 'test', 'production'].includes(config.NODE_ENV)) {
-    errors.push('NODE_ENV must be development, test, or production');
-  }
-  if (!Number.isInteger(config.PORT) || config.PORT < 1 || config.PORT > 65535) {
-    errors.push('PORT must be a valid TCP port');
-  }
-  if (!Number.isInteger(config.OPENAI_TIMEOUT_MS) || config.OPENAI_TIMEOUT_MS < 1000) {
-    errors.push('OPENAI_TIMEOUT_MS must be >= 1000');
-  }
-  if (!Number.isInteger(config.RATE_LIMIT_WINDOW_MS) || config.RATE_LIMIT_WINDOW_MS < 1000) {
-    errors.push('RATE_LIMIT_WINDOW_MS must be >= 1000');
-  }
-  if (!Number.isInteger(config.RATE_LIMIT_MAX) || config.RATE_LIMIT_MAX < 1) {
-    errors.push('RATE_LIMIT_MAX must be >= 1');
-  }
-  if (!config.OPENAI_MODEL) {
-    errors.push('OPENAI_MODEL is required');
-  }
-  if (config.NODE_ENV === 'production' && !config.OPENAI_API_KEY) {
-    errors.push('OPENAI_API_KEY is required in production');
-  }
-
-  if (errors.length) {
-    const message = `Invalid environment configuration: ${errors.join('; ')}`;
-    const error = new Error(message);
+  const parsed = EnvSchema.safeParse(raw);
+  if (!parsed.success) {
+    const details = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ');
+    const error = new Error(`Invalid environment configuration: ${details}`);
     error.code = 'INVALID_ENV';
     throw error;
   }
+
+  return {
+    ...parsed.data,
+    ALLOWED_ORIGINS: parseOrigins(parsed.data.ALLOWED_ORIGINS)
+  };
 }
 
-module.exports = { env, validateEnvOrThrow };
+module.exports = { loadEnv };

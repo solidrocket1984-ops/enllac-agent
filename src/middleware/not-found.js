@@ -1,12 +1,7 @@
-function notFound(req, res) {
-  res.status(404).json({
-    ok: false,
-    error: {
-      code: 'NOT_FOUND',
-      message: 'Route not found',
-      request_id: req.requestId || null
-    }
-  });
+const { HttpError } = require('../lib/http-error');
+
+function notFound(req, _res, next) {
+  next(new HttpError(404, 'NOT_FOUND', `Route not found: ${req.method} ${req.path}`));
 }
 
 module.exports = { notFound };

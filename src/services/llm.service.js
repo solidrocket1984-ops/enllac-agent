@@ -1,84 +1,61 @@
-const https = require('https');
 const { HttpError } = require('../lib/http-error');
+const { createResponse } = require('../lib/openai-client');
 
-function extractOutputText(parsed) {
-  if (!parsed || !Array.isArray(parsed.output)) return '';
-  const first = parsed.output[0];
-  const content = first && first.content;
-  if (!Array.isArray(content) || !content[0]) return '';
-  return content[0].text || '';
+function extractText(response) {
+  if (typeof response.output_text === 'string' && response.output_text.trim()) return response.output_text;
+  if (Array.isArray(response.output)) {
+    for (const item of response.output) {
+      if (!Array.isArray(item.content)) continue;
+      for (const part of item.content) {
+        if ((part.type === 'output_text' || part.type === 'text') && part.text) return part.text;
+      }
+    }
+  }
+  return '';
 }
 
 function createLlmService({ env, modelConfig, logger }) {
   async function generateStructuredJson({ systemPrompt, userPayload, requestId }) {
-    const requestBody = JSON.stringify({
-      model: modelConfig.model,
-      input: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: JSON.stringify(userPayload) }
-      ]
-    });
-
-    return new Promise((resolve, reject) => {
-      const req = https.request(
-        {
-          hostname: 'api.openai.com',
-          path: '/v1/responses',
-          method: 'POST',
-          timeout: modelConfig.timeoutMs,
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-            'Content-Length': Buffer.byteLength(requestBody)
-          }
-        },
-        (res) => {
-          let data = '';
-          res.on('data', (chunk) => {
-            data += chunk;
-          });
-          res.on('end', () => {
-            if (res.statusCode >= 500) {
-              return reject(new HttpError(503, 'LLM_UPSTREAM_UNAVAILABLE', 'LLM provider unavailable'));
-            }
-            if (res.statusCode >= 400) {
-              logger.warn('llm client error', { request_id: requestId, status: res.statusCode });
-              return reject(new HttpError(502, 'LLM_UPSTREAM_ERROR', 'LLM provider returned an error'));
-            }
-
-            try {
-              const parsed = JSON.parse(data);
-              const text = extractOutputText(parsed);
-              if (!text) {
-                return reject(new HttpError(502, 'EMPTY_LLM_OUTPUT', 'LLM returned empty output'));
-              }
-              const json = JSON.parse(text);
-              return resolve(json);
-            } catch (error) {
-              return reject(new HttpError(502, 'INVALID_LLM_OUTPUT', 'LLM output was not valid JSON'));
-            }
-          });
+    try {
+      const response = await createResponse({
+        apiKey: env.OPENAI_API_KEY,
+        timeout: modelConfig.timeoutMs,
+        body: {
+          model: modelConfig.model,
+          max_output_tokens: 900,
+          temperature: 0.2,
+          input: [
+            { role: 'system', content: [{ type: 'input_text', text: systemPrompt }] },
+            { role: 'user', content: [{ type: 'input_text', text: JSON.stringify(userPayload) }] },
+            { role: 'user', content: [{ type: 'input_text', text: 'Return ONLY a JSON object with the agreed public fields.' }] }
+          ]
         }
-      );
-
-      req.on('timeout', () => {
-        req.destroy(new HttpError(503, 'LLM_TIMEOUT', 'LLM request timed out'));
       });
 
-      req.on('error', (error) => {
-        if (error instanceof HttpError) {
-          return reject(error);
-        }
-        logger.error('llm network error', { request_id: requestId, error: error.message });
-        return reject(new HttpError(503, 'LLM_NETWORK_ERROR', 'Could not reach LLM provider'));
-      });
+      const outputText = extractText(response).trim();
+      if (!outputText) throw new HttpError(502, 'PROVIDER_ERROR', 'Provider returned empty output');
 
-      req.write(requestBody);
-      req.end();
-    });
+      try {
+        return JSON.parse(outputText);
+      } catch (_e) {
+        const match = outputText.match(/\{[\s\S]*\}$/);
+        if (match) return JSON.parse(match[0]);
+        throw new HttpError(502, 'PROVIDER_ERROR', 'Provider output is not valid JSON');
+      }
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      logger.warn('llm_provider_error', { request_id: requestId, status: error.status, provider_code: error.code || 'UNKNOWN' });
+      if (error.code === 'ETIMEDOUT') throw new HttpError(503, 'PROVIDER_TIMEOUT', 'Provider request timed out');
+      if (error.status >= 500) throw new HttpError(503, 'PROVIDER_ERROR', 'Provider unavailable');
+      throw new HttpError(502, 'PROVIDER_ERROR', 'Provider request failed');
+    }
   }
 
-  return { generateStructuredJson };
+  function isReady() {
+    return Boolean(env.OPENAI_API_KEY && modelConfig.model);
+  }
+
+  return { generateStructuredJson, isReady };
 }
 
 module.exports = { createLlmService };

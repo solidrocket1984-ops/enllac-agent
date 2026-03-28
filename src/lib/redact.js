@@ -12,13 +12,14 @@ function redactPhone(phone) {
 }
 
 function summarizePayload(payload) {
+  const lead = payload.lead || payload.leadContext || {};
   return {
     language: payload.language,
-    scenario: payload.scenario,
-    messages_count: Array.isArray(payload.messages) ? payload.messages.length : 0,
-    experiences_count: Array.isArray(payload.experiences) ? payload.experiences.length : 0,
-    lead_email: redactEmail(payload.lead && payload.lead.email),
-    lead_phone: redactPhone(payload.lead && payload.lead.phone)
+    sector: payload.sector,
+    messages_count: Array.isArray(payload.messages) ? payload.messages.length : (Array.isArray(payload.conversation) ? payload.conversation.length : 0),
+    offers_count: Array.isArray(payload.experiences) ? payload.experiences.length : (Array.isArray(payload.offers) ? payload.offers.length : 0),
+    lead_email: redactEmail(lead.email),
+    lead_phone: redactPhone(lead.phone)
   };
 }
 
