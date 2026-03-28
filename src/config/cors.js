@@ -11,7 +11,7 @@ function buildCorsOptions(env) {
       return callback(new HttpError(403, 'FORBIDDEN_ORIGIN', 'Origin not allowed by CORS'));
     },
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-Agent-Token'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-Agent-Token', 'X-Demo-Request-Id'],
     exposedHeaders: ['X-Request-Id', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'],
     maxAge: 600
   };
