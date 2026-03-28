@@ -1,97 +1,85 @@
 # enllac-agent
 
-Backend HTTP para DemoEnllacAgent, refactorizado para producción con arquitectura modular, validación fuerte, observabilidad y compatibilidad retroactiva.
+Backend de agente conversacional para `DemoEnllacDigital`, preparado para Render con enfoque de producción.
 
 ## Qué hace
-- Recibe conversaciones comerciales y contexto de negocio desde frontend.
-- Normaliza el payload legado (`winery`, `experiences`, `lead`) a un dominio interno (`businessContext`, `offers`, `leadContext`).
-- Construye prompt base + prompt sectorial (winery/generic).
-- Consulta LLM y valida salida estructurada.
-- Devuelve respuesta pública compatible con el contrato actual de DemoEnllacAgent.
+- Expone endpoints de chat compatibles con el frontend actual.
+- Normaliza payload legacy (winery/experiences/lead/messages) a dominio interno neutral.
+- Selecciona prompt por sector (`winery`, `clinic`, etc.).
+- Llama al proveedor LLM y devuelve respuesta pública compatible.
 
 ## Endpoints
-- `GET /` estado simple.
-- `GET /healthz` healthcheck básico.
-- `GET /readyz` readiness de configuración mínima.
+- `GET /` estado básico.
+- `GET /healthz` liveness.
+- `GET /readyz` readiness (configuración LLM).
 - `POST /v1/chat` endpoint canónico.
 - `POST /chat` alias compatible.
-- `POST /` alias temporal compatible.
+- `POST /` alias legacy compatible.
 
-## Contrato request (compatible)
-```json
-{
-  "language": "es",
-  "scenario": "familia",
-  "winery": {},
-  "experiences": [],
-  "lead": {},
-  "messages": [{ "role": "user", "content": "..." }]
-}
-```
+## Contrato request (público)
+Campos esperados (compatibles):
+- `language`, `scenario`, `sector`
+- `winery` (legacy)
+- `experiences` (legacy)
+- `lead` (legacy)
+- `messages` (obligatorio)
 
-## Contrato response (público compatible)
-Siempre incluye al menos:
-- `reply_text`
-- `language`
-- `detected_intent`
-- `people_count`
-- `recommended_experience_id`
-- `alternative_experience_id`
-- `objection_detected`
-- `lead_stage`
-- `next_step`
-- `ask_for_contact`
-- `conversation_summary`
-- `lead_name`
-- `lead_email`
-- `lead_phone`
-- `desired_date`
-- `fields_to_update`
+También soporta internamente:
+- `businessContext`, `offers`, `leadContext`, `conversation`, `metadata`
 
-Además añade `_meta` no rompiente.
+## Contrato response (público)
+Siempre retorna top-level compatibles:
+- `reply_text`, `language`, `detected_intent`, `people_count`
+- `recommended_experience_id`, `alternative_experience_id`
+- `objection_detected`, `lead_stage`, `next_step`, `ask_for_contact`
+- `conversation_summary`, `lead_name`, `lead_email`, `lead_phone`
+- `desired_date`, `fields_to_update`
+
+Puede incluir `_meta` no rompiente.
 
 ## Variables de entorno
-- `PORT` (default `3000`)
-- `NODE_ENV` (`development|test|production`)
-- `OPENAI_API_KEY` (obligatoria en producción)
-- `OPENAI_MODEL` (default `gpt-4.1-mini`)
-- `OPENAI_TIMEOUT_MS` (default `12000`)
-- `ALLOWED_ORIGINS` (CSV)
-- `AGENT_SHARED_TOKEN` (si existe, requiere `x-agent-token`)
-- `LOG_LEVEL` (default `info`)
-- `DEFAULT_SECTOR` (default `generic`)
-- `RATE_LIMIT_WINDOW_MS` (default `60000`)
-- `RATE_LIMIT_MAX` (default `60`)
-- `BODY_LIMIT` (default `250kb`)
-- `ENABLE_PRETTY_LOGS` (reservado para evolución)
-- `APP_NAME` (default `enllac-agent`)
+Obligatorias:
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
 
-## Local
+Configurables:
+- `PORT`, `NODE_ENV`, `OPENAI_TIMEOUT_MS`
+- `ALLOWED_ORIGINS` (CSV)
+- `AGENT_SHARED_TOKEN` (si existe, exige `x-agent-token`)
+- `DEFAULT_SECTOR`
+- `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX`
+- `BODY_LIMIT`
+- `LOG_LEVEL`, `APP_NAME`
+
+## Seguridad
+- `helmet`
+- CORS con allowlist por `ALLOWED_ORIGINS`
+- limitador de body
+- rate limit por IP
+- request id (`x-request-id`)
+- logs estructurados con redacción parcial de PII
+
+## Desarrollo local
 ```bash
 npm install
 npm run dev
 ```
 
-## Test
+Tests:
 ```bash
 npm test
 ```
 
-## Producción / Render
-- Usa `npm start` como Start Command.
-- Expone `PORT` provisto por Render.
-- Configura `OPENAI_API_KEY`, `ALLOWED_ORIGINS`, y opcional `AGENT_SHARED_TOKEN`.
-- Usa `GET /healthz` para health check y `GET /readyz` para readiness.
+## Deploy en Render
+- Build command: `npm install`
+- Start command: `npm start`
+- Health check path: `/healthz`
+- Readiness path recomendado: `/readyz`
 
-## Seguridad
-- CORS con allowlist por ENV.
-- Límite de body.
-- Rate limit por IP.
-- Headers de seguridad básicos.
-- Logs estructurados con request id.
-- Redacción parcial de PII en logs.
-- Errores controlados (`ok:false`, `error.code`, `request_id`).
+## Compatibilidad con DemoEnllacDigital
+Se mantiene compatibilidad completa con payload/respuesta legacy del frontend, además de endpoint alias `/chat`.
 
 ## Limitaciones actuales
-- En este entorno no se pudieron añadir dependencias externas nuevas (p.ej. SDK oficial OpenAI/Zod), por política de acceso al registry.
-- Se deja capa `llm.service` desacoplada para migrar fácilmente al SDK oficial cuando esté disponible.
+- Rate limiter en memoria (para fase 2 conviene Redis).
+- Readiness verifica configuración, no chequea llamada activa al proveedor.
+- No persistencia de conversaciones en backend.

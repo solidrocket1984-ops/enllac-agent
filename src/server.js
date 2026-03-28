@@ -1,10 +1,13 @@
-const { env, validateEnvOrThrow } = require('./config/env');
 const { createApp } = require('./app');
+const { loadEnv } = require('./config/env');
 
-validateEnvOrThrow(env);
+function startServer() {
+  const env = loadEnv();
+  const app = createApp({ env });
+  return app.listen(env.PORT, () => {
+    // eslint-disable-next-line no-console
+    console.log(`${env.APP_NAME} listening on ${env.PORT}`);
+  });
+}
 
-const app = createApp({ env });
-
-app.listen(env.PORT, () => {
-  console.log(`${env.APP_NAME} listening on port ${env.PORT}`);
-});
+module.exports = { startServer };

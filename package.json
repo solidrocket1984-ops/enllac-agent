@@ -1,7 +1,7 @@
 {
   "name": "enllac-agent",
   "version": "2.0.0",
-  "description": "Production-ready backend for DemoEnllacAgent",
+  "description": "Reliable production-ready backend for DemoEnllacDigital",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
@@ -9,7 +9,7 @@
     "start": "node server.js",
     "test": "node --test",
     "test:watch": "node --test --watch",
-    "lint": "node --check server.js && node --check src/server.js && node --check src/app.js"
+    "lint": "node --check server.js && rg --files src test | xargs -I{} node --check {}"
   },
   "keywords": [
     "express",

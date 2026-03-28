@@ -1,30 +1,22 @@
-const { HttpError } = require('../lib/http-error');
+const { z } = require('../lib/zod-lite');
 
-const REQUIRED_STRING_FIELDS = [
-  'reply_text',
-  'language',
-  'detected_intent',
-  'objection_detected',
-  'lead_stage',
-  'next_step'
-];
+const LlmOutputSchema = z.object({
+  reply_text: z.string().min(1).max(4000),
+  language: z.string().min(2).max(5),
+  detected_intent: z.string().min(1).max(80),
+  people_count: z.number().int().min(1).max(100).nullable().optional(),
+  recommended_experience_id: z.string().max(120).nullable().optional(),
+  alternative_experience_id: z.string().max(120).nullable().optional(),
+  objection_detected: z.string().max(120),
+  lead_stage: z.string().max(120),
+  next_step: z.string().max(120),
+  ask_for_contact: z.boolean(),
+  conversation_summary: z.string().max(1000).nullable().optional(),
+  lead_name: z.string().max(120).nullable().optional(),
+  lead_email: z.string().email().max(160).nullable().optional(),
+  lead_phone: z.string().max(40).nullable().optional(),
+  desired_date: z.string().max(50).nullable().optional(),
+  fields_to_update: z.record(z.any()).default({})
+}).strict();
 
-function validateLlmOutput(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new HttpError(502, 'INVALID_LLM_OUTPUT', 'LLM output is not a valid JSON object');
-  }
-
-  for (const field of REQUIRED_STRING_FIELDS) {
-    if (typeof value[field] !== 'string' || !value[field].trim()) {
-      throw new HttpError(502, 'INVALID_LLM_OUTPUT', `Missing or invalid field from LLM output: ${field}`);
-    }
-  }
-
-  if (!('ask_for_contact' in value) || typeof value.ask_for_contact !== 'boolean') {
-    throw new HttpError(502, 'INVALID_LLM_OUTPUT', 'ask_for_contact must be a boolean');
-  }
-
-  return true;
-}
-
-module.exports = { validateLlmOutput };
+module.exports = { LlmOutputSchema };

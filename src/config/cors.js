@@ -1,17 +1,18 @@
+const { HttpError } = require('../lib/http-error');
+
 function buildCorsOptions(env) {
-  const allowlist = env.ALLOWED_ORIGINS;
+  const allowlist = new Set(env.ALLOWED_ORIGINS);
+
   return {
     origin(origin, callback) {
       if (!origin) return callback(null, true);
-      if (!allowlist.length || allowlist.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error('Origin not allowed by CORS'));
+      if (allowlist.size === 0) return callback(null, true);
+      if (allowlist.has(origin)) return callback(null, true);
+      return callback(new HttpError(403, 'FORBIDDEN_ORIGIN', 'Origin not allowed by CORS'));
     },
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'x-agent-token', 'x-request-id'],
-    exposedHeaders: ['x-request-id'],
-    credentials: false,
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-Agent-Token'],
+    exposedHeaders: ['X-Request-Id', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'],
     maxAge: 600
   };
 }

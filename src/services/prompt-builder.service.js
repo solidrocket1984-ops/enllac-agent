@@ -1,32 +1,27 @@
-const { getBaseSystemPrompt } = require('../prompts/base-system-prompt');
-const { getWineryPrompt } = require('../prompts/sectors/winery');
-const { getGenericPrompt } = require('../prompts/sectors/generic');
+const basePrompt = require('../prompts/base-system-prompt');
+const generic = require('../prompts/sectors/generic');
+const winery = require('../prompts/sectors/winery');
+const clinic = require('../prompts/sectors/clinic');
+const professionalServices = require('../prompts/sectors/professional_services');
+const localBusiness = require('../prompts/sectors/local_business');
+const hospitality = require('../prompts/sectors/hospitality');
+const tourism = require('../prompts/sectors/tourism');
+const ecommerceRetail = require('../prompts/sectors/ecommerce_retail');
 
-function outputSchemaHint() {
-  return `JSON schema required:\n{
-  "reply_text":"string",
-  "language":"string",
-  "detected_intent":"string",
-  "people_count":number|null,
-  "recommended_experience_id":"string"|null,
-  "alternative_experience_id":"string"|null,
-  "objection_detected":"string",
-  "lead_stage":"string",
-  "next_step":"string",
-  "ask_for_contact":boolean,
-  "conversation_summary":"string"|null,
-  "lead_name":"string"|null,
-  "lead_email":"string"|null,
-  "lead_phone":"string"|null,
-  "desired_date":"string"|null,
-  "fields_to_update":{}
-}`;
-}
+const sectorPrompts = {
+  generic,
+  winery,
+  clinic,
+  professional_services: professionalServices,
+  local_business: localBusiness,
+  hospitality,
+  tourism,
+  ecommerce_retail: ecommerceRetail
+};
 
 function buildSystemPrompt(sector) {
-  const base = getBaseSystemPrompt();
-  const sectorPrompt = sector === 'winery' ? getWineryPrompt() : getGenericPrompt();
-  return `${base}\n${sectorPrompt}\n${outputSchemaHint()}`;
+  const sectorPrompt = sectorPrompts[sector] || generic;
+  return `${basePrompt}\n\n${sectorPrompt}`;
 }
 
 module.exports = { buildSystemPrompt };
