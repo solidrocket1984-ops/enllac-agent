@@ -5,23 +5,22 @@ const NormalizedMessageSchema = z.object({
   content: z.string().min(1).max(2500)
 });
 
+const LocalizedTextSchema = z.object({
+  ca: z.string().default(''),
+  es: z.string().default(''),
+  en: z.string().default('')
+});
+
 const NormalizedOfferSchema = z.object({
   id: z.string().min(1),
-  title: z.object({
-    ca: z.string().default(''),
-    es: z.string().default(''),
-    en: z.string().default('')
-  }),
-  description: z.object({
-    ca: z.string().default(''),
-    es: z.string().default(''),
-    en: z.string().default('')
-  }),
+  title: LocalizedTextSchema,
+  description: LocalizedTextSchema,
   price: z.number().nullable(),
   currency: z.string().nullable(),
   duration: z.string().nullable(),
   min_people: z.number().int().nullable(),
-  max_people: z.number().int().nullable()
+  max_people: z.number().int().nullable(),
+  metadata: z.record(z.any()).default({})
 });
 
 const NormalizedChatRequestSchema = z.object({
@@ -47,7 +46,8 @@ const NormalizedChatRequestSchema = z.object({
     email: z.string().nullable(),
     phone: z.string().nullable()
   }),
-  conversation: z.array(NormalizedMessageSchema).min(1).max(60)
+  conversation: z.array(NormalizedMessageSchema).min(1).max(60),
+  metadata: z.record(z.any()).default({})
 });
 
 module.exports = { NormalizedChatRequestSchema };

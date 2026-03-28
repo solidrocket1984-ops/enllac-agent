@@ -1,85 +1,222 @@
 # enllac-agent
 
-Backend de agente conversacional para `DemoEnllacDigital`, preparado para Render con enfoque de producción.
+Backend conversacional de `DemoEnllacDigital` reforzado para producción en Render, con compatibilidad retroactiva y contrato canónico interno.
 
-## Qué hace
-- Expone endpoints de chat compatibles con el frontend actual.
-- Normaliza payload legacy (winery/experiences/lead/messages) a dominio interno neutral.
-- Selecciona prompt por sector (`winery`, `clinic`, etc.).
-- Llama al proveedor LLM y devuelve respuesta pública compatible.
-
-## Endpoints
+## Endpoints finales
 - `GET /` estado básico.
-- `GET /healthz` liveness.
-- `GET /readyz` readiness (configuración LLM).
+- `GET /healthz` liveness real.
+- `GET /readyz` readiness (configuración + proveedor listo).
 - `POST /v1/chat` endpoint canónico.
 - `POST /chat` alias compatible.
-- `POST /` alias legacy compatible.
+- `POST /` alias legacy.
 
-## Contrato request (público)
-Campos esperados (compatibles):
-- `language`, `scenario`, `sector`
-- `winery` (legacy)
-- `experiences` (legacy)
-- `lead` (legacy)
-- `messages` (obligatorio)
+## Contratos soportados
 
-También soporta internamente:
-- `businessContext`, `offers`, `leadContext`, `conversation`, `metadata`
+### Request público aceptado (legacy + nuevo)
+Se aceptan **ambas familias** de payload:
 
-## Contrato response (público)
-Siempre retorna top-level compatibles:
-- `reply_text`, `language`, `detected_intent`, `people_count`
-- `recommended_experience_id`, `alternative_experience_id`
-- `objection_detected`, `lead_stage`, `next_step`, `ask_for_contact`
-- `conversation_summary`, `lead_name`, `lead_email`, `lead_phone`
-- `desired_date`, `fields_to_update`
+1) Legacy frontend actual:
+- `language`
+- `scenario`
+- `sector`
+- `winery`
+- `experiences`
+- `lead`
+- `messages`
 
-Puede incluir `_meta` no rompiente.
+2) Nuevo normalizado de integración:
+- `language`
+- `scenario`
+- `sector`
+- `businessContext`
+- `offers`
+- `leadContext`
+- `conversation`
+- `metadata`
+
+### Tolerancias implementadas
+- `winery.faqs`: array/string/null.
+- `winery.recommendation_rules`: array/string/null.
+- `winery.objection_rules`: array/string/null.
+- `lead.email`, `lead.phone`, `lead.name`: `""` => `null`.
+- `experiences`: shape legacy multilenguaje **o** shape simplificado (`id`, `name`, `description`, `price`, `active`, `winery_id`).
+- `messages`/`conversation`: se limpian, recortan y normalizan a roles `user|assistant`.
+
+### Shape canónico interno
+Siempre se normaliza a:
+
+```json
+{
+  "language": "es",
+  "scenario": "default",
+  "sector": "generic",
+  "businessContext": {
+    "type": "generic",
+    "name": null,
+    "slug": null,
+    "brandTone": null,
+    "briefHistory": null,
+    "shortDescription": null,
+    "valueProposition": null,
+    "faqs": [],
+    "recommendationRules": [],
+    "objectionRules": [],
+    "metadata": {}
+  },
+  "offers": [
+    {
+      "id": "offer_1",
+      "title": { "ca": "", "es": "", "en": "" },
+      "description": { "ca": "", "es": "", "en": "" },
+      "price": null,
+      "currency": null,
+      "duration": null,
+      "min_people": null,
+      "max_people": null,
+      "metadata": {}
+    }
+  ],
+  "leadContext": {
+    "name": null,
+    "email": null,
+    "phone": null
+  },
+  "conversation": [
+    { "role": "user", "content": "..." }
+  ],
+  "metadata": {}
+}
+```
+
+### Response pública (estable)
+```json
+{
+  "reply_text": "...",
+  "language": "es",
+  "detected_intent": "...",
+  "people_count": null,
+  "recommended_experience_id": null,
+  "alternative_experience_id": null,
+  "objection_detected": "none",
+  "lead_stage": "new",
+  "next_step": "continue_conversation",
+  "ask_for_contact": false,
+  "conversation_summary": null,
+  "lead_name": null,
+  "lead_email": null,
+  "lead_phone": null,
+  "desired_date": null,
+  "fields_to_update": {},
+  "_meta": {
+    "request_id": "...",
+    "sector": "...",
+    "compatibility_mode": true
+  }
+}
+```
+
+## Headers, CORS y transición
+### Header canónico de trazabilidad
+- **Canónico**: `X-Request-Id`
+- **Compatibilidad temporal**: `X-Demo-Request-Id`
+
+Si llega `X-Demo-Request-Id` y no llega `X-Request-Id`, el backend reutiliza ese valor y responde con `x-request-id`.
+
+### Token compartido
+Si `AGENT_SHARED_TOKEN` está definido:
+- Principal: `x-agent-token`
+- Compatibilidad temporal: `Authorization: Bearer <token>`
+
+### CORS
+- Allowlist por `ALLOWED_ORIGINS` (CSV).
+- Headers permitidos:
+  - `Content-Type`
+  - `Authorization`
+  - `X-Request-Id`
+  - `X-Agent-Token`
+  - `X-Demo-Request-Id` (transitorio)
+
+## Timeouts y errores
+- `OPENAI_TIMEOUT_MS`: default `30000`.
+- Errores consistentes:
+  - `INVALID_BODY`
+  - `MISSING_AUTH_TOKEN`
+  - `INVALID_AUTH_TOKEN`
+  - `FORBIDDEN_ORIGIN`
+  - `PROVIDER_TIMEOUT`
+  - `PROVIDER_ERROR`
+  - `INTERNAL_ERROR`
+
+Formato estándar:
+```json
+{ "ok": false, "error": { "code": "...", "message": "...", "request_id": "..." } }
+```
+
+## Resolución de sector
+Orden:
+1. `payload.sector`
+2. pistas de `businessContext`
+3. heurística legacy sobre `winery`
+4. `DEFAULT_SECTOR`
+5. fallback `generic`
+
+Sectores incluidos:
+- `generic`
+- `winery`
+- `clinic`
+- `professional_services`
+- `local_business`
+- `hospitality`
+- `tourism`
+- `ecommerce_retail`
 
 ## Variables de entorno
-Obligatorias:
+- `PORT` (default `3000`)
+- `NODE_ENV` (`development|test|production`)
 - `OPENAI_API_KEY`
 - `OPENAI_MODEL`
-
-Configurables:
-- `PORT`, `NODE_ENV`, `OPENAI_TIMEOUT_MS`
+- `OPENAI_TIMEOUT_MS` (default `30000`)
 - `ALLOWED_ORIGINS` (CSV)
-- `AGENT_SHARED_TOKEN` (si existe, exige `x-agent-token`)
-- `DEFAULT_SECTOR`
-- `RATE_LIMIT_WINDOW_MS`, `RATE_LIMIT_MAX`
-- `BODY_LIMIT`
-- `LOG_LEVEL`, `APP_NAME`
+- `AGENT_SHARED_TOKEN`
+- `DEFAULT_SECTOR` (default `generic`)
+- `RATE_LIMIT_WINDOW_MS` (default `60000`)
+- `RATE_LIMIT_MAX` (default `60`)
+- `BODY_LIMIT` (default `250kb`)
+- `LOG_LEVEL` (`debug|info|warn|error`)
+- `APP_NAME`
 
-## Seguridad
-- `helmet`
-- CORS con allowlist por `ALLOWED_ORIGINS`
-- limitador de body
-- rate limit por IP
-- request id (`x-request-id`)
-- logs estructurados con redacción parcial de PII
-
-## Desarrollo local
+## Scripts
 ```bash
-npm install
 npm run dev
-```
-
-Tests:
-```bash
+npm start
 npm test
+npm run test:watch
+npm run lint
 ```
 
-## Deploy en Render
-- Build command: `npm install`
-- Start command: `npm start`
-- Health check path: `/healthz`
-- Readiness path recomendado: `/readyz`
+## Despliegue Render
+- Build Command: `npm install`
+- Start Command: `npm start`
+- Health Check Path: `/healthz`
+- Readiness recomendado: `/readyz`
+- `trust proxy` activado para entorno behind-proxy (Render).
+
+## Curl de ejemplo
+```bash
+curl -X POST http://localhost:3000/v1/chat \
+  -H 'Content-Type: application/json' \
+  -H 'X-Request-Id: req-123' \
+  -d '{
+    "language": "es",
+    "winery": {"name": "Celler Demo", "faqs": "Horario 10-18"},
+    "experiences": [{"id": 1, "name": "Cata Premium", "price": "45"}],
+    "lead": {"email": ""},
+    "messages": [{"role": "user", "content": "Busco plan para 2"}]
+  }'
+```
 
 ## Compatibilidad con DemoEnllacDigital
-Se mantiene compatibilidad completa con payload/respuesta legacy del frontend, además de endpoint alias `/chat`.
-
-## Limitaciones actuales
-- Rate limiter en memoria (para fase 2 conviene Redis).
-- Readiness verifica configuración, no chequea llamada activa al proveedor.
-- No persistencia de conversaciones en backend.
+- Se mantiene `/chat`.
+- Se soporta shape legacy.
+- Se conserva response pública legacy.
+- Se incorpora contrato canónico interno robusto para evolución multi-sector sin romper frontend actual.

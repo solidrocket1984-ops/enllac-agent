@@ -8,7 +8,7 @@ const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required'),
   OPENAI_MODEL: z.string().min(1).default('gpt-4.1-mini'),
-  OPENAI_TIMEOUT_MS: z.number().int().min(1000).max(120000).default(15000),
+  OPENAI_TIMEOUT_MS: z.number().int().min(1000).max(120000).default(30000),
   ALLOWED_ORIGINS: z.string().optional().default(''),
   AGENT_SHARED_TOKEN: z.string().optional().default(''),
   DEFAULT_SECTOR: z.string().min(1).default('generic'),
