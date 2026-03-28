@@ -19,7 +19,7 @@ function createApp({ env, overrides = {} }) {
   const logger = overrides.logger || createLogger({ level: env.LOG_LEVEL, name: env.APP_NAME });
   const app = express();
 
-  app.set('trust proxy', 1);
+  app.set('trust proxy', true);
   app.use(requestIdMiddleware);
   app.use((req, res, next) => {
     const startedAt = Date.now();
